@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#059669" />
+      <stop offset="50%" stop-color="#0d9488" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="boxGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <!-- Background rounded rect -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" />
+
+  <!-- Inner glowing border -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="none" stroke="#ffffff" stroke-opacity="0.15" stroke-width="6" />
+
+  <!-- Gift Box / Inventory Package Illustration -->
+  <g filter="url(#shadow)" transform="translate(64, 64) scale(0.75)">
+    <!-- Main Box Body -->
+    <rect x="40" y="160" width="432" height="312" rx="36" fill="url(#boxGrad)" />
+
+    <!-- Box Lid -->
+    <rect x="20" y="100" width="472" height="76" rx="24" fill="#10b981" />
+
+    <!-- Vertical Ribbon -->
+    <rect x="216" y="100" width="80" height="372" fill="url(#goldGrad)" rx="6" />
+
+    <!-- Horizontal Ribbon -->
+    <rect x="40" y="280" width="432" height="70" fill="url(#goldGrad)" />
+
+    <!-- Ribbon Bow Knot -->
+    <circle cx="256" cy="95" r="28" fill="#f59e0b" />
+    <!-- Left Loop -->
+    <path d="M 256 95 C 210 20, 120 40, 160 100 C 180 125, 230 110, 256 95 Z" fill="#fbbf24" />
+    <!-- Right Loop -->
+    <path d="M 256 95 C 302 20, 392 40, 352 100 C 332 125, 282 110, 256 95 Z" fill="#fbbf24" />
+
+    <!-- Taka / Currency Symbol Badge -->
+    <circle cx="390" cy="380" r="54" fill="#ffffff" filter="url(#shadow)" />
+    <text x="390" y="405" font-family="Arial, sans-serif" font-size="64" font-weight="900" fill="#059669" text-anchor="middle">৳</text>
+
+    <!-- Checkmark Badge on Left -->
+    <circle cx="120" cy="380" r="44" fill="#065f46" />
+    <path d="M 104 380 L 115 392 L 138 368" fill="none" stroke="#34d399" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+</svg>

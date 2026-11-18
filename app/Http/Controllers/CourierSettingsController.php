@@ -1,0 +1,62 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Throwable;
+
+class CourierSettingsController extends Controller
+{
+    public function show(): JsonResponse
+    {
+        try {
+            AppAuthController::ensureCoreTables();
+            $raw = AppAuthController::getAppSetting('courier_settings_json');
+            if ($raw) {
+                $decoded = json_decode($raw, true);
+                return response()->json([
+                    'success' => true,
+                    'settings' => $decoded,
+                    'data' => $decoded,
+                ]);
+            }
+
+            $defaults = [
+                'defaultCourier' => 'Pathao',
+                'pathaoStoreId' => (string) env('PATHAO_STORE_ID', '435821'),
+                'pathaoClientId' => (string) env('PATHAO_CLIENT_ID', 'pmbk5kJezJ'),
+                'pathaoClientSecret' => (string) env('PATHAO_CLIENT_SECRET', 'g5lWzr9D0VChoGyT4guCv5NFFNlotXt8Qg4jUXFo'),
+                'pathaoUsername' => (string) env('PATHAO_USERNAME', 'budgetchoicebd@gmail.com'),
+                'pathaoSandbox' => false,
+            ];
+
+            return response()->json([
+                'success' => true,
+                'settings' => $defaults,
+                'data' => $defaults,
+            ]);
+        } catch (Throwable) {
+            return response()->json(['success' => true, 'settings' => null, 'data' => null]);
+        }
+    }
+
+    public function store(Request $request): JsonResponse
+    {
+        try {
+            AppAuthController::ensureCoreTables();
+            $payload = $request->input('settings') ?? $request->all();
+            AppAuthController::setAppSetting(
+                'courier_settings_json',
+                (string) json_encode($payload, JSON_UNESCAPED_UNICODE)
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Courier API settings successfully saved on server.',
+            ]);
+        } catch (Throwable) {
+            return response()->json(['success' => true, 'localFallback' => true]);
+        }
+    }
+}
