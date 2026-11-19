@@ -101,52 +101,55 @@ class FraudCheckerController extends Controller
 
     private function checkPathao(string $phone): array
     {
-        // Try through the Azmolla package PathaoService first if configured
+        $user = trim((string) (config('fraud-checker-bd-courier.pathao.user') ?: env('PATHAO_USER') ?: env('PATHAO_USERNAME') ?: 'budgetchoicebd@gmail.com'));
+        $pass = trim((string) (config('fraud-checker-bd-courier.pathao.password') ?: env('PATHAO_PASSWORD') ?: 'Tabiasami3@'));
+
         try {
-            if (config('fraud-checker-bd-courier.pathao.user') && config('fraud-checker-bd-courier.pathao.password')) {
-                $service = new PathaoService();
-                $stats = $service->getDeliveryStats($phone);
-                if (!empty($stats) && !isset($stats['error'])) {
-                    return $stats;
-                }
-            }
-        } catch (Throwable $e) {
-            Log::info('Azmolla PathaoService fallback triggered: ' . $e->getMessage());
-        }
+            $token = (string) AppAuthController::getAppSetting('pathao_merchant_portal_token', '');
+            $tokenExpiry = (int) AppAuthController::getAppSetting('pathao_merchant_portal_expiry', '0');
 
-        // Direct fallback using Pathao Courier Controller token
-        try {
-            $user = config('fraud-checker-bd-courier.pathao.user', env('PATHAO_USERNAME', 'budgetchoicebd@gmail.com'));
-            $pass = config('fraud-checker-bd-courier.pathao.password', env('PATHAO_PASSWORD', 'Tabiasami3@'));
+            if (!$token || time() >= ($tokenExpiry - 300)) {
+                $loginRes = Http::timeout(12)->acceptJson()->post('https://merchant.pathao.com/api/v1/login', [
+                    'username' => $user,
+                    'password' => $pass,
+                ]);
 
-            // Step A: Login to merchant.pathao.com
-            $loginRes = Http::timeout(10)->post('https://merchant.pathao.com/api/v1/login', [
-                'username' => $user,
-                'password' => $pass,
-            ]);
-
-            if ($loginRes->successful()) {
-                $token = $loginRes->json('access_token');
-                if ($token) {
-                    $statRes = Http::timeout(10)->withToken($token)->post('https://merchant.pathao.com/api/v1/user/success', [
-                        'phone' => $phone,
-                    ]);
-
-                    if ($statRes->successful()) {
-                        $cust = $statRes->json('data.customer') ?? [];
-                        $succ = (int) ($cust['successful_delivery'] ?? 0);
-                        $tot = (int) ($cust['total_delivery'] ?? 0);
-                        $canc = max(0, $tot - $succ);
-                        return [
-                            'success' => $succ,
-                            'cancel' => $canc,
-                            'total' => $tot,
-                            'success_ratio' => $tot > 0 ? round(($succ / $tot) * 100, 1) : 0,
-                        ];
+                if ($loginRes->successful()) {
+                    $token = (string) ($loginRes->json('access_token') ?? '');
+                    $expiresIn = (int) ($loginRes->json('expires_in') ?? 86400 * 30);
+                    if ($token) {
+                        AppAuthController::setAppSetting('pathao_merchant_portal_token', $token);
+                        AppAuthController::setAppSetting('pathao_merchant_portal_expiry', (string) (time() + $expiresIn));
                     }
+                } else {
+                    Log::error('Pathao Merchant Login Failed: ' . $loginRes->body());
+                }
+            }
+
+            if ($token) {
+                $statRes = Http::timeout(12)->acceptJson()->withToken($token)->post('https://merchant.pathao.com/api/v1/user/success', [
+                    'phone' => $phone,
+                ]);
+
+                if ($statRes->successful()) {
+                    $data = $statRes->json('data') ?? [];
+                    $cust = $data['customer'] ?? [];
+                    $succ = (int) ($cust['successful_delivery'] ?? 0);
+                    $tot = (int) ($cust['total_delivery'] ?? 0);
+                    $canc = max(0, $tot - $succ);
+                    $rating = (string) ($data['customer_rating'] ?? '');
+
+                    return [
+                        'success' => $succ,
+                        'cancel' => $canc,
+                        'total' => $tot,
+                        'success_ratio' => $tot > 0 ? round(($succ / $tot) * 100, 1) : 0,
+                        'rating' => $rating,
+                    ];
                 }
             }
         } catch (Throwable $e) {
+            Log::error('Pathao Fraud Check Error: ' . $e->getMessage());
             return ['error' => 'Pathao API: ' . $e->getMessage()];
         }
 
