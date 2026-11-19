@@ -47,6 +47,39 @@
     <!-- Live Multi-Courier Fraud Network Checker Integration -->
     <script>
       (function() {
+        // Auto-fix any cached parcel status in localStorage to match React UI tabs
+        try {
+          var rawParcels = localStorage.getItem('biz_v5_clean_parcels');
+          if (rawParcels && (rawParcels.indexOf('"Delivered"') !== -1 || rawParcels.indexOf('"Returned"') !== -1 || rawParcels.indexOf('"In Transit"') !== -1 || rawParcels.indexOf('"Cancelled"') !== -1 || rawParcels.indexOf('"Pending"') !== -1)) {
+            var parsed = JSON.parse(rawParcels);
+            if (Array.isArray(parsed)) {
+              var modified = false;
+              parsed.forEach(function(p) {
+                if (p && p.status) {
+                  var s = ('' + p.status).toLowerCase();
+                  var mapped = p.status;
+                  if (s.indexOf('deliver') !== -1 && s.indexOf('hub') === -1) mapped = 'delivered';
+                  else if (s.indexOf('return') !== -1) mapped = 'returned';
+                  else if (s.indexOf('cancel') !== -1) mapped = 'cancelled';
+                  else if (s.indexOf('transit') !== -1 || s.indexOf('hub') !== -1 || s.indexOf('shipped') !== -1) mapped = 'in_transit';
+                  else if (s.indexOf('out for delivery') !== -1) mapped = 'out_for_delivery';
+                  else if (s.indexOf('pickup') !== -1 || s === 'pending') mapped = 'pending_pickup';
+
+                  if (mapped !== p.status) {
+                    p.status = mapped;
+                    modified = true;
+                  }
+                }
+              });
+              if (modified) {
+                localStorage.setItem('biz_v5_clean_parcels', JSON.stringify(parsed));
+                window.location.reload();
+                return;
+              }
+            }
+          }
+        } catch (e) {}
+
         var lastCheckedPhone = '';
         var checkTimeout = null;
 
@@ -232,11 +265,14 @@
               .then(function(res) { return res.json(); })
               .then(function(data) {
                 if (data.success) {
+                  try {
+                    localStorage.removeItem('biz_v5_clean_parcels');
+                  } catch (e) {}
                   if (icon) icon.className = 'text-base text-emerald-400';
                   if (sub) sub.innerHTML = '<span class="text-emerald-400 font-bold">' + data.total_synced + 'টি অর্ডার সিঙ্ক হয়েছে! রিফ্রেশ হচ্ছে...</span>';
                   setTimeout(function() {
                     window.location.reload();
-                  }, 1200);
+                  }, 800);
                 } else {
                   alert(data.error || 'Pathao sync failed');
                   if (icon) icon.className = 'text-base';
