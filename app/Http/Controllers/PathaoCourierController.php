@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CourierParcel;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Throwable;
@@ -43,7 +44,7 @@ class PathaoCourierController extends Controller
         }
 
         if ($password === '') {
-            throw new RuntimeException('Pathao Merchant Password is required to generate access token.');
+            throw new RuntimeException('Pathao Merchant Password দেওয়া নেই। দয়া করে Settings > Courier Settings-এ গিয়ে আপনার Pathao Merchant লগইন পাসওয়ার্ড বসান।');
         }
 
         $res = Http::timeout(15)->acceptJson()->post($baseUrl . '/aladdin/api/v1/issue-token', [
@@ -56,7 +57,11 @@ class PathaoCourierController extends Controller
 
         $data = $res->json() ?? [];
         if (!$res->successful() || empty($data['access_token'])) {
-            throw new RuntimeException($data['message'] ?? ('Failed to authenticate with Pathao API (HTTP ' . $res->status() . ')'));
+            $rawMsg = $data['message'] ?? ('HTTP ' . $res->status());
+            if (str_contains(strtolower($rawMsg), 'credentials were incorrect')) {
+                throw new RuntimeException('Pathao Merchant Password অথবা Username ভুল। দয়া করে merchant.pathao.com এ লগইন করার সঠিক পাসওয়ার্ড দিন।');
+            }
+            throw new RuntimeException('Pathao API Authentication Failed: ' . $rawMsg);
         }
 
         $token = (string) $data['access_token'];
@@ -94,6 +99,10 @@ class PathaoCourierController extends Controller
 
             if (!empty($body['password'])) {
                 AppAuthController::setAppSetting('pathao_password', (string) $body['password']);
+                // Update courier_settings_json as well if present
+                $stored = $this->getStoredCourierConfig();
+                $stored['pathaoPassword'] = (string) $body['password'];
+                AppAuthController::setAppSetting('courier_settings_json', json_encode($stored, JSON_UNESCAPED_UNICODE));
             }
             if (!empty($body['storeId'])) {
                 AppAuthController::setAppSetting('pathao_store_id', (string) $body['storeId']);
@@ -188,8 +197,13 @@ class PathaoCourierController extends Controller
             if (!preg_match('/^01[3-9]\d{8}$/', $cleanPhone)) {
                 return response()->json([
                     'success' => false,
-                    'error' => 'Invalid Bangladeshi recipient phone number. Must be 11 digits starting with 01.',
+                    'error' => 'ভুল মোবাইল নম্বর। নম্বরটি অবশ্যই ০১ দিয়ে শুরু ১১ ডিজিটের বাংলাদেশি নম্বর হতে হবে।',
                 ], 400);
+            }
+
+            $rawAddress = trim((string) ($order['recipientAddress'] ?? ''));
+            if (strlen($rawAddress) < 10) {
+                $rawAddress .= ', Bangladesh';
             }
 
             $payload = [
@@ -197,9 +211,7 @@ class PathaoCourierController extends Controller
                 'merchant_order_id' => (string) ($order['merchantOrderId'] ?? $order['orderNumber'] ?? ('ORD-' . substr((string) time(), -6))),
                 'recipient_name' => trim((string) ($order['recipientName'] ?? 'Customer')),
                 'recipient_phone' => $cleanPhone,
-                'recipient_address' => trim((string) ($order['recipientAddress'] ?? '')),
-                'recipient_city' => (int) ($order['cityId'] ?? 1),
-                'recipient_zone' => (int) ($order['zoneId'] ?? 1),
+                'recipient_address' => $rawAddress,
                 'delivery_type' => (int) ($order['deliveryType'] ?? 48),
                 'item_type' => (int) ($order['itemType'] ?? 2),
                 'special_instruction' => (string) ($order['specialInstruction'] ?? ''),
@@ -209,11 +221,20 @@ class PathaoCourierController extends Controller
                 'item_description' => (string) ($order['itemDescription'] ?? 'Retail Parcel Products'),
             ];
 
+            // If valid city/zone are selected, send them; otherwise Pathao auto-detects from address
+            $cityId = (int) ($order['cityId'] ?? 0);
+            $zoneId = (int) ($order['zoneId'] ?? 0);
+            if ($cityId > 0) {
+                $payload['recipient_city'] = $cityId;
+            }
+            if ($zoneId > 0) {
+                $payload['recipient_zone'] = $zoneId;
+            }
             if (!empty($order['areaId'])) {
                 $payload['recipient_area'] = (int) $order['areaId'];
             }
 
-            $res = Http::timeout(15)
+            $res = Http::timeout(20)
                 ->withToken($auth['token'])
                 ->acceptJson()
                 ->post($auth['baseUrl'] . '/aladdin/api/v1/orders', $payload);
@@ -222,13 +243,25 @@ class PathaoCourierController extends Controller
             $consignmentId = $orderData['data']['consignment_id'] ?? null;
 
             if (!$res->successful() || empty($consignmentId)) {
+                $errMsg = $orderData['message'] ?? 'Pathao কুরিয়ারে পার্সেল বুকিং ব্যর্থ হয়েছে।';
+                if (!empty($orderData['errors']) && is_array($orderData['errors'])) {
+                    $details = [];
+                    foreach ($orderData['errors'] as $field => $fieldErrors) {
+                        $details[] = is_array($fieldErrors) ? implode(', ', $fieldErrors) : $fieldErrors;
+                    }
+                    if ($details) {
+                        $errMsg .= ' (' . implode(' | ', $details) . ')';
+                    }
+                }
+
                 return response()->json([
                     'success' => false,
-                    'error' => $orderData['message'] ?? 'Failed to dispatch parcel to Pathao.',
+                    'error' => $errMsg,
                     'raw' => $orderData,
                 ], 400);
             }
 
+            // Save to database
             try {
                 CourierParcel::create([
                     'id' => 'pcl-' . time(),
@@ -243,12 +276,12 @@ class PathaoCourierController extends Controller
                     'status' => 'pending_pickup',
                 ]);
             } catch (Throwable) {
-                // Non-fatal if relational table not yet migrated
+                // Non-fatal if table not migrated
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Order created successfully on Pathao Courier!',
+                'message' => 'পার্সেল সফলভাবে পাঠাও কুরিয়ারে পাঠানো হয়েছে!',
                 'data' => $orderData['data'],
             ]);
         } catch (Throwable $e) {
