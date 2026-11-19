@@ -74,3 +74,10 @@ php artisan serve
 - `database/budgetchoice_database.sql` — সম্পূর্ণ লাইভ ডেটাবেস SQL ডাম্প (phpMyAdmin Import-এর জন্য)
 - `routes/web.php` & `routes/api.php` — সকল পেজ এবং REST API রাউট
 - `public/` — কম্পাইল করা React SPA অ্যাসেট ও `index.php` এন্ট্রিপয়েন্ট
+
+---
+
+## ৪. অটোমেটিক ডেপ্লয়মেন্ট স্ট্যাটাস
+- **GitHub Actions Auto-Deploy to cPanel**: সক্রিয় (Active)
+- **Last Tested**: 2026-11-19
+
