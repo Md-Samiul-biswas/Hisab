@@ -7,18 +7,35 @@ on:
 
 jobs:
   web-deploy:
-    name: Deploy to cPanel via FTP
+    name: Deploy to cPanel via SFTP
     runs-on: ubuntu-latest
     steps:
       - name: 🚚 Checkout latest code
         uses: actions/checkout@v4
 
-      - name: 📂 Sync files to cPanel
+      - name: 🧹 Format server hostname/IP
+        id: clean_host
+        run: |
+          RAW_SERVER="${{ secrets.CPANEL_FTP_SERVER }}"
+          SERVER="${RAW_SERVER#http://}"
+          SERVER="${SERVER#https://}"
+          SERVER="${SERVER#ftp://}"
+          SERVER="${SERVER#sftp://}"
+          SERVER="${SERVER%%/*}"
+          SERVER=$(echo "$SERVER" | tr -d '[:space:]')
+          if [ -z "$SERVER" ]; then
+            SERVER="144.79.133.66"
+          fi
+          echo "server=$SERVER" >> $GITHUB_OUTPUT
+
+      - name: 📂 Sync files to cPanel via SFTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.CPANEL_FTP_SERVER }}
+          server: ${{ steps.clean_host.outputs.server }}
           username: ${{ secrets.CPANEL_FTP_USERNAME }}
           password: ${{ secrets.CPANEL_FTP_PASSWORD }}
+          protocol: sftp
+          port: 22
           server-dir: public_html/
           exclude: |
             **/.git*
