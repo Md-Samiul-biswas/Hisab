@@ -7,6 +7,8 @@ Route::get('/app-mode.json', function () {
         'mode' => 'cpanel-php',
         'framework' => 'laravel',
         'ownerEmail' => 'samiulbiswas016@gmail.com',
+        'syncStatus' => 'Auto-Git-Connected',
+        'version' => '1.0.1'
     ]);
 });
 

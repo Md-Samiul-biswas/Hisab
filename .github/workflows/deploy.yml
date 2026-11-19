@@ -29,17 +29,12 @@ jobs:
           echo "server=$SERVER" >> $GITHUB_OUTPUT
 
       - name: 📂 Sync files to cPanel via SFTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.6
         with:
-          server: ${{ steps.clean_host.outputs.server }}
           username: ${{ secrets.CPANEL_FTP_USERNAME }}
           password: ${{ secrets.CPANEL_FTP_PASSWORD }}
-          protocol: sftp
+          server: ${{ steps.clean_host.outputs.server }}
           port: 22
-          server-dir: hisab.budgetchoicebd.com/
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/node_modules/**
-            .env
-            database/*.sql
+          local_path: './*'
+          remote_path: '/home/budgetch/hisab.budgetchoicebd.com/'
+          sftp_only: true

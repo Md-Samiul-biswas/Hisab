@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#059669" />
-    <title>Budget Choice Bd - Business Hub</title>
+    <title>Budget Choice Bd - Business Hub (Live Sync v1.0.1)</title>
     <link rel="icon" type="image/svg+xml" href="{{ asset('icon.svg') }}" />
     <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}" />
     <link rel="manifest" href="{{ asset('manifest.webmanifest') }}" />
