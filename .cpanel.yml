@@ -1,7 +1,6 @@
 ---
 deployment:
   tasks:
-    # cPanel Git™ Versioning Deployment Script
-    # Replace $USER or set full path if needed: /home/YOUR_CPANEL_USERNAME/public_html/
-    - export DEPLOYPATH=/home/$USER/public_html/
+    - export DEPLOYPATH=/home/budgetch/hisab.budgetchoicebd.com/
     - /bin/cp -R * $DEPLOYPATH
+
