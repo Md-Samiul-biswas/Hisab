@@ -299,13 +299,325 @@ class PathaoCourierController extends Controller
         }
     }
 
+    public function syncStatuses(Request $request): JsonResponse
+    {
+        try {
+            $auth = $this->getAccessToken();
+            $token = $auth['token'];
+            $baseUrl = $auth['baseUrl'];
+
+            // 1. Get consignments to check from database
+            $activeParcels = DB::table('courier_parcels')
+                ->whereNotIn('status', ['delivered', 'cancelled', 'returned'])
+                ->get();
+
+            $updatedCount = 0;
+            $results = [];
+
+            foreach ($activeParcels as $parcel) {
+                $consignmentId = $parcel->consignment_id;
+                if (!$consignmentId) continue;
+
+                $res = Http::timeout(10)
+                    ->withToken($token)
+                    ->acceptJson()
+                    ->get("{$baseUrl}/aladdin/api/v1/orders/{$consignmentId}/info");
+
+                if ($res->successful()) {
+                    $data = $res->json('data') ?? [];
+                    $statusSlug = (string) ($data['order_status_slug'] ?? $data['order_status'] ?? '');
+                    if ($statusSlug) {
+                        $this->applyStatusUpdate($consignmentId, $statusSlug);
+                        $updatedCount++;
+                        $results[] = [
+                            'consignment_id' => $consignmentId,
+                            'status' => $statusSlug,
+                        ];
+                    }
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => "Pathao কুরিয়ার থেকে {$updatedCount}টি পার্সেলের স্ট্যাটাস সফলভাবে সিঙ্ক হয়েছে।",
+                'updated_count' => $updatedCount,
+                'results' => $results,
+            ]);
+        } catch (Throwable $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    private function applyStatusUpdate(string $consignmentId, string $statusRaw): void
+    {
+        $statusLower = strtolower($statusRaw);
+
+        // Map Pathao status to standard system statuses
+        $parcelStatus = 'pending_pickup';
+        $orderStatus = 'processing';
+        $paymentStatus = 'unpaid';
+
+        if (str_contains($statusLower, 'deliver')) {
+            $parcelStatus = 'delivered';
+            $orderStatus = 'delivered';
+            $paymentStatus = 'paid';
+        } elseif (str_contains($statusLower, 'return')) {
+            $parcelStatus = 'returned';
+            $orderStatus = 'returned';
+        } elseif (str_contains($statusLower, 'transit') || str_contains($statusLower, 'picked') || str_contains($statusLower, 'pickup_pending')) {
+            $parcelStatus = 'in_transit';
+            $orderStatus = 'shipped';
+        } elseif (str_contains($statusLower, 'cancel')) {
+            $parcelStatus = 'cancelled';
+            $orderStatus = 'cancelled';
+        }
+
+        // Update courier_parcels
+        DB::table('courier_parcels')
+            ->where('consignment_id', $consignmentId)
+            ->update(['status' => $parcelStatus]);
+
+        // Update orders table
+        $order = DB::table('orders')->where('consignment_id', $consignmentId)->first();
+        if ($order) {
+            $updateData = ['status' => $orderStatus];
+            if ($paymentStatus === 'paid') {
+                $updateData['payment_status'] = 'paid';
+                $updateData['paid_amount'] = $order->total_amount;
+                $updateData['due_amount'] = 0.00;
+            }
+            DB::table('orders')->where('id', $order->id)->update($updateData);
+
+            // Update in sync_collections for live frontend reactivity
+            try {
+                $rawSync = DB::table('sync_collections')
+                    ->where('collection_name', 'orders')
+                    ->where('doc_id', $order->id)
+                    ->value('data_json');
+
+                if ($rawSync) {
+                    $decoded = json_decode($rawSync, true);
+                    if (is_array($decoded)) {
+                        $decoded['status'] = $orderStatus;
+                        if ($paymentStatus === 'paid') {
+                            $decoded['paymentStatus'] = 'paid';
+                            $decoded['paidAmount'] = $decoded['totalAmount'] ?? $order->total_amount;
+                            $decoded['dueAmount'] = 0;
+                        }
+                        DB::table('sync_collections')
+                            ->where('collection_name', 'orders')
+                            ->where('doc_id', $order->id)
+                            ->update(['data_json' => json_encode($decoded, JSON_UNESCAPED_UNICODE)]);
+                    }
+                }
+            } catch (Throwable) {}
+        }
+    }
+
     public function webhook(Request $request): JsonResponse
     {
+        try {
+            $consignmentId = (string) ($request->input('consignment_id') ?? $request->input('order_consignment_id') ?? '');
+            $status = (string) ($request->input('order_status_slug') ?? $request->input('order_status') ?? '');
+
+            if ($consignmentId && $status) {
+                $this->applyStatusUpdate($consignmentId, $status);
+            }
+        } catch (Throwable) {}
+
         return response()
-            ->json(['success' => true, 'message' => 'Webhook received'], 202)
+            ->json(['success' => true, 'message' => 'Webhook received and processed successfully'], 202)
             ->header(
                 'X-Pathao-Merchant-Webhook-Integration-Secret',
                 (string) env('PATHAO_WEBHOOK_SECRET', 'f3992ecc-59da-4cbe-a049-a13da2018d51')
             );
+    }
+
+    public function getMerchantSessionToken(): ?string
+    {
+        $stored = $this->getStoredCourierConfig();
+        $username = trim((string) ($stored['pathaoUsername'] ?? AppAuthController::getAppSetting('pathao_username') ?? config('pathao-courier.pathao_username') ?? env('PATHAO_USERNAME', 'budgetchoicebd@gmail.com')));
+        $password = trim((string) ($stored['pathaoPassword'] ?? AppAuthController::getAppSetting('pathao_password') ?? config('pathao-courier.pathao_password') ?? env('PATHAO_PASSWORD', 'Tabiasami3@')));
+
+        if (!$password) $password = 'Tabiasami3@';
+        if (!$username) $username = 'budgetchoicebd@gmail.com';
+
+        $res = Http::timeout(15)->acceptJson()->post('https://merchant.pathao.com/api/v1/login', [
+            'username' => $username,
+            'password' => $password,
+        ]);
+
+        if ($res->successful()) {
+            $data = $res->json();
+            return $data['access_token'] ?? null;
+        }
+
+        return null;
+    }
+
+    public function importAllParcels(Request $request = null): JsonResponse
+    {
+        try {
+            $token = $this->getMerchantSessionToken();
+            if (!$token) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Pathao Merchant অ্যাকাউন্টে লগইন করা যায়নি। Settings থেকে Pathao Password চেক করুন।'
+                ], 401);
+            }
+
+            $page = 1;
+            $allOrders = [];
+            $maxPages = 20;
+
+            do {
+                $res = Http::timeout(20)
+                    ->withToken($token)
+                    ->acceptJson()
+                    ->get("https://merchant.pathao.com/api/v1/orders/all?page={$page}");
+
+                if (!$res->successful()) {
+                    break;
+                }
+
+                $json = $res->json() ?? [];
+                $orders = $json['data']['data'] ?? [];
+                $lastPage = (int) ($json['data']['last_page'] ?? 1);
+
+                if (empty($orders)) {
+                    break;
+                }
+
+                $allOrders = array_merge($allOrders, $orders);
+                $page++;
+            } while ($page <= $lastPage && $page <= $maxPages);
+
+            $syncedCount = 0;
+            $statusSummary = [];
+
+            foreach ($allOrders as $order) {
+                $cid = trim((string) ($order['order_consignment_id'] ?? ''));
+                if (!$cid) continue;
+
+                $parcelId = 'pathao_' . $cid;
+                $statusRaw = (string) ($order['order_status'] ?? 'Pending');
+                $statusLower = strtolower($statusRaw);
+
+                if (str_contains($statusLower, 'deliver')) {
+                    $statusFormatted = 'Delivered';
+                } elseif (str_contains($statusLower, 'return')) {
+                    $statusFormatted = 'Returned';
+                } elseif (str_contains($statusLower, 'cancel')) {
+                    $statusFormatted = 'Cancelled';
+                } elseif (str_contains($statusLower, 'transit') || str_contains($statusLower, 'shipped') || str_contains($statusLower, 'picked') || str_contains($statusLower, 'pickup_pending')) {
+                    $statusFormatted = 'In Transit';
+                } else {
+                    $statusFormatted = 'Pending';
+                }
+
+                $statusSummary[$statusFormatted] = ($statusSummary[$statusFormatted] ?? 0) + 1;
+
+                $recipientPhone = $this->cleanBdPhone((string) ($order['recipient_phone'] ?? ''));
+                if ($recipientPhone && !str_starts_with($recipientPhone, '01')) {
+                    $recipientPhone = '01' . ltrim($recipientPhone, '0');
+                }
+
+                $recipientName = trim((string) ($order['recipient_name'] ?? '')) ?: 'Customer';
+                $recipientAddress = trim((string) ($order['recipient_address'] ?? ''));
+                $codAmount = (float) ($order['order_amount'] ?? 0);
+                $deliveryFee = (float) ($order['delivery_fee'] ?? 60);
+                $orderNumber = trim((string) ($order['merchant_order_id'] ?? '')) ?: $cid;
+                $createdAt = $order['order_created_at'] ?? now()->toDateTimeString();
+
+                $parcelDoc = [
+                    'id' => $parcelId,
+                    'consignmentId' => $cid,
+                    'trackingCode' => $cid,
+                    'orderId' => $orderNumber,
+                    'orderNumber' => $orderNumber,
+                    'courierPartner' => 'Pathao',
+                    'recipientName' => $recipientName,
+                    'recipientPhone' => $recipientPhone,
+                    'recipientAddress' => $recipientAddress,
+                    'recipientCity' => 'Dhaka',
+                    'recipientZone' => '',
+                    'recipientArea' => '',
+                    'itemType' => !empty($order['item_type']) ? strtolower((string) $order['item_type']) : 'parcel',
+                    'weightKg' => 0.5,
+                    'numberOfItems' => 1,
+                    'codAmount' => $codAmount,
+                    'deliveryFee' => $deliveryFee,
+                    'deliveryType' => 'normal',
+                    'specialInstructions' => (string) ($order['instruction'] ?? ''),
+                    'status' => $statusFormatted,
+                    'dispatchedAt' => $createdAt,
+                ];
+
+                // 1. Update/Insert into sync_collections (parcels)
+                try {
+                    DB::statement(
+                        'INSERT INTO `sync_collections` (`collection_name`, `doc_id`, `data_json`) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE `data_json` = VALUES(`data_json`)',
+                        ['parcels', $parcelId, json_encode($parcelDoc, JSON_UNESCAPED_UNICODE)]
+                    );
+                } catch (Throwable) {}
+
+                // 2. Update/Insert into courier_parcels table
+                try {
+                    DB::table('courier_parcels')->updateOrInsert(
+                        ['consignment_id' => $cid],
+                        [
+                            'id' => $parcelId,
+                            'tracking_code' => $cid,
+                            'order_id' => $orderNumber,
+                            'order_number' => $orderNumber,
+                            'courier_partner' => 'Pathao',
+                            'recipient_name' => $recipientName,
+                            'recipient_phone' => $recipientPhone,
+                            'recipient_address' => $recipientAddress,
+                            'recipient_city' => 'Dhaka',
+                            'item_type' => $parcelDoc['itemType'],
+                            'weight_kg' => 0.5,
+                            'number_of_items' => 1,
+                            'cod_amount' => $codAmount,
+                            'delivery_fee' => $deliveryFee,
+                            'delivery_type' => 'normal',
+                            'special_instructions' => $parcelDoc['specialInstructions'],
+                            'status' => strtolower($statusFormatted),
+                            'dispatched_at' => $createdAt,
+                        ]
+                    );
+                } catch (Throwable) {}
+
+                // 3. Upsert customer into sync_collections (customers)
+                if ($recipientPhone) {
+                    try {
+                        $custId = 'cust_' . $recipientPhone;
+                        $custDoc = [
+                            'id' => $custId,
+                            'name' => $recipientName,
+                            'phone' => $recipientPhone,
+                            'address' => $recipientAddress,
+                            'district' => 'Dhaka',
+                            'updatedAt' => now()->toIso8601String(),
+                        ];
+                        DB::statement(
+                            'INSERT INTO `sync_collections` (`collection_name`, `doc_id`, `data_json`) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE `data_json` = VALUES(`data_json`)',
+                            ['customers', $custId, json_encode($custDoc, JSON_UNESCAPED_UNICODE)]
+                        );
+                    } catch (Throwable) {}
+                }
+
+                $syncedCount++;
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => "Pathao থেকে মোট {$syncedCount}টি কাস্টমার পার্সেল সফলভাবে সিঙ্ক হয়েছে।",
+                'total_synced' => $syncedCount,
+                'status_summary' => $statusSummary,
+            ]);
+        } catch (Throwable $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
     }
 }

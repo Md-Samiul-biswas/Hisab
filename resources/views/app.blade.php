@@ -192,11 +192,76 @@
           });
         }
 
+        function scanForCourierSync() {
+          // Check if we are viewing the Courier page
+          var isCourierPage = document.querySelector('button[type="button"]') && (
+            document.body.innerText.indexOf('Courier Integration') !== -1 ||
+            document.body.innerText.indexOf('Pathao Courier') !== -1 ||
+            document.body.innerText.indexOf('Dispatch New Parcel') !== -1 ||
+            window.location.hash.indexOf('courier') !== -1
+          );
+
+          var existingBtn = document.getElementById('pathao-sync-btn');
+          if (!isCourierPage) {
+            if (existingBtn) existingBtn.remove();
+            return;
+          }
+
+          if (existingBtn) return;
+
+          // Find suitable toolbar or header container
+          var targetContainer = document.querySelector('header') || document.querySelector('nav') || document.body;
+          var floatBar = document.createElement('div');
+          floatBar.id = 'pathao-sync-btn';
+          floatBar.className = 'fixed bottom-5 right-5 z-40 flex items-center gap-2 bg-neutral-900/90 hover:bg-neutral-900 backdrop-blur text-white px-4 py-2.5 rounded-2xl shadow-xl border border-neutral-700/60 cursor-pointer transition-all duration-200 select-none';
+          floatBar.innerHTML = '<span id="pathao-sync-icon" class="text-base">🔄</span>' +
+            '<div class="text-left">' +
+              '<div class="text-[11px] font-bold tracking-tight">Sync Pathao Orders</div>' +
+              '<div id="pathao-sync-sub" class="text-[9px] text-neutral-400">পাঠাও থেকে কাস্টমার লিস্ট আনুন</div>' +
+            '</div>';
+
+          floatBar.addEventListener('click', function() {
+            var icon = document.getElementById('pathao-sync-icon');
+            var sub = document.getElementById('pathao-sync-sub');
+            if (floatBar.dataset.loading === 'true') return;
+            floatBar.dataset.loading = 'true';
+            if (icon) icon.className = 'text-base inline-block animate-spin';
+            if (sub) sub.innerText = 'অর্ডার লোড হচ্ছে...';
+
+            fetch('/api/courier/pathao/import-parcels', { method: 'POST' })
+              .then(function(res) { return res.json(); })
+              .then(function(data) {
+                if (data.success) {
+                  if (icon) icon.className = 'text-base text-emerald-400';
+                  if (sub) sub.innerHTML = '<span class="text-emerald-400 font-bold">' + data.total_synced + 'টি অর্ডার সিঙ্ক হয়েছে! রিফ্রেশ হচ্ছে...</span>';
+                  setTimeout(function() {
+                    window.location.reload();
+                  }, 1200);
+                } else {
+                  alert(data.error || 'Pathao sync failed');
+                  if (icon) icon.className = 'text-base';
+                  if (sub) sub.innerText = 'আবার চেষ্টা করুন';
+                  floatBar.dataset.loading = 'false';
+                }
+              })
+              .catch(function(err) {
+                alert('কুরিয়ার সার্ভারের সাথে সংযোগ ব্যর্থ হয়েছে।');
+                if (icon) icon.className = 'text-base';
+                if (sub) sub.innerText = 'ত্রুটি হয়েছে';
+                floatBar.dataset.loading = 'false';
+              });
+          });
+
+          document.body.appendChild(floatBar);
+        }
+
         var observer = new MutationObserver(function() {
           scanForModal();
+          scanForCourierSync();
         });
         observer.observe(document.body, { childList: true, subtree: true });
         scanForModal();
+        scanForCourierSync();
       })();
     </script>
   </body>

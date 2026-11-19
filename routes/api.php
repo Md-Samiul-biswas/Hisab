@@ -23,6 +23,12 @@ Route::match(['get', 'post'], '/sync/{action?}', [SyncController::class, 'handle
 // Public Courier Webhooks (incoming from courier servers)
 Route::post('/courier/pathao/webhook', [PathaoCourierController::class, 'webhook']);
 
+// Auto-Sync Courier Delivery Tracking (Pathao, Steadfast)
+Route::match(['get', 'post'], '/courier/pathao/sync-status', [PathaoCourierController::class, 'syncStatuses']);
+Route::match(['get', 'post'], '/courier/sync-status', [PathaoCourierController::class, 'syncStatuses']);
+Route::match(['get', 'post'], '/courier/pathao/import-parcels', [PathaoCourierController::class, 'importAllParcels']);
+Route::match(['get', 'post'], '/courier/import-parcels', [PathaoCourierController::class, 'importAllParcels']);
+
 // Multi-Courier BD Fraud Network Checker (Steadfast, Pathao, RedX, Paperfly, Carrybee)
 Route::match(['get', 'post'], '/fraud-check', [FraudCheckerController::class, 'check']);
 Route::match(['get', 'post'], '/courier/fraud-check', [FraudCheckerController::class, 'check']);
