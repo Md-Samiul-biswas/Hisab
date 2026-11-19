@@ -3,6 +3,7 @@
 use App\Http\Controllers\AiOrderController;
 use App\Http\Controllers\AppAuthController;
 use App\Http\Controllers\CourierSettingsController;
+use App\Http\Controllers\FraudCheckerController;
 use App\Http\Controllers\PathaoCourierController;
 use App\Http\Controllers\SteadfastCourierController;
 use App\Http\Controllers\SyncController;
@@ -21,6 +22,10 @@ Route::match(['get', 'post'], '/sync/{action?}', [SyncController::class, 'handle
 
 // Public Courier Webhooks (incoming from courier servers)
 Route::post('/courier/pathao/webhook', [PathaoCourierController::class, 'webhook']);
+
+// Multi-Courier BD Fraud Network Checker (Steadfast, Pathao, RedX, Paperfly, Carrybee)
+Route::match(['get', 'post'], '/fraud-check', [FraudCheckerController::class, 'check']);
+Route::match(['get', 'post'], '/courier/fraud-check', [FraudCheckerController::class, 'check']);
 
 // Protected APIs (Require Authentication)
 Route::middleware(['app.auth'])->group(function () {
