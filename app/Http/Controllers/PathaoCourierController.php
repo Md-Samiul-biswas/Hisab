@@ -377,6 +377,26 @@ class PathaoCourierController extends Controller
             ->where('consignment_id', $consignmentId)
             ->update(['status' => $parcelStatus]);
 
+        // Update in sync_collections for parcels
+        try {
+            $parcelDocId = 'pathao_' . $consignmentId;
+            $rawParcel = DB::table('sync_collections')
+                ->where('collection_name', 'parcels')
+                ->where('doc_id', $parcelDocId)
+                ->value('data_json');
+
+            if ($rawParcel) {
+                $decoded = json_decode($rawParcel, true);
+                if (is_array($decoded)) {
+                    $decoded['status'] = $parcelStatus;
+                    DB::table('sync_collections')
+                        ->where('collection_name', 'parcels')
+                        ->where('doc_id', $parcelDocId)
+                        ->update(['data_json' => json_encode($decoded, JSON_UNESCAPED_UNICODE)]);
+                }
+            }
+        } catch (Throwable) {}
+
         // Update orders table
         $order = DB::table('orders')->where('consignment_id', $consignmentId)->first();
         if ($order) {
@@ -503,19 +523,21 @@ class PathaoCourierController extends Controller
                 $statusRaw = (string) ($order['order_status'] ?? 'Pending');
                 $statusLower = strtolower($statusRaw);
 
-                if (str_contains($statusLower, 'deliver')) {
-                    $statusFormatted = 'Delivered';
+                if (str_contains($statusLower, 'deliver') && !str_contains($statusLower, 'hub')) {
+                    $statusSlug = 'delivered';
                 } elseif (str_contains($statusLower, 'return')) {
-                    $statusFormatted = 'Returned';
+                    $statusSlug = 'returned';
                 } elseif (str_contains($statusLower, 'cancel')) {
-                    $statusFormatted = 'Cancelled';
-                } elseif (str_contains($statusLower, 'transit') || str_contains($statusLower, 'shipped') || str_contains($statusLower, 'picked') || str_contains($statusLower, 'pickup_pending')) {
-                    $statusFormatted = 'In Transit';
+                    $statusSlug = 'cancelled';
+                } elseif (str_contains($statusLower, 'transit') || str_contains($statusLower, 'hub') || str_contains($statusLower, 'exchange') || str_contains($statusLower, 'shipped')) {
+                    $statusSlug = 'in_transit';
+                } elseif (str_contains($statusLower, 'out for delivery')) {
+                    $statusSlug = 'out_for_delivery';
                 } else {
-                    $statusFormatted = 'Pending';
+                    $statusSlug = 'pending_pickup';
                 }
 
-                $statusSummary[$statusFormatted] = ($statusSummary[$statusFormatted] ?? 0) + 1;
+                $statusSummary[$statusSlug] = ($statusSummary[$statusSlug] ?? 0) + 1;
 
                 $recipientPhone = $this->cleanBdPhone((string) ($order['recipient_phone'] ?? ''));
                 if ($recipientPhone && !str_starts_with($recipientPhone, '01')) {
@@ -547,9 +569,17 @@ class PathaoCourierController extends Controller
                     'numberOfItems' => 1,
                     'codAmount' => $codAmount,
                     'deliveryFee' => $deliveryFee,
+                    'returnFee' => ($statusSlug === 'returned') ? $deliveryFee : 0,
                     'deliveryType' => 'normal',
                     'specialInstructions' => (string) ($order['instruction'] ?? ''),
-                    'status' => $statusFormatted,
+                    'status' => $statusSlug,
+                    'statusHistory' => [
+                        [
+                            'status' => $statusSlug,
+                            'timestamp' => $createdAt,
+                            'note' => 'Pathao status: ' . $statusRaw
+                        ]
+                    ],
                     'dispatchedAt' => $createdAt,
                 ];
 
@@ -582,7 +612,7 @@ class PathaoCourierController extends Controller
                             'delivery_fee' => $deliveryFee,
                             'delivery_type' => 'normal',
                             'special_instructions' => $parcelDoc['specialInstructions'],
-                            'status' => strtolower($statusFormatted),
+                            'status' => $statusSlug,
                             'dispatched_at' => $createdAt,
                         ]
                     );
