@@ -21,24 +21,33 @@ class CourierSettingsController extends Controller
 
         try {
             AppAuthController::ensureCoreTables();
-            $raw = AppAuthController::getAppSetting('courier_settings_json');
-            if ($raw) {
-                $decoded = json_decode($raw, true);
-                return response()->json([
-                    'success' => true,
-                    'settings' => $decoded,
-                    'data' => $decoded,
-                ]);
-            }
 
             $defaults = [
                 'defaultCourier' => 'Pathao',
-                'pathaoStoreId' => (string) env('PATHAO_STORE_ID', '435821'),
-                'pathaoClientId' => (string) env('PATHAO_CLIENT_ID', 'pmbk5kJezJ'),
-                'pathaoClientSecret' => (string) env('PATHAO_CLIENT_SECRET', 'g5lWzr9D0VChoGyT4guCv5NFFNlotXt8Qg4jUXFo'),
-                'pathaoUsername' => (string) env('PATHAO_USERNAME', 'budgetchoicebd@gmail.com'),
+                'pathaoStoreId' => (string) (env('PATHAO_STORE_ID') ?: '435821'),
+                'pathaoClientId' => (string) (env('PATHAO_CLIENT_ID') ?: 'pmbk5kJezJ'),
+                'pathaoClientSecret' => (string) (env('PATHAO_CLIENT_SECRET') ?: 'g5lWzr9D0VChoGyT4guCv5NFFNlotXt8Qg4jUXFo'),
+                'pathaoUsername' => (string) (env('PATHAO_USERNAME') ?: 'budgetchoicebd@gmail.com'),
+                'pathaoPassword' => (string) (env('PATHAO_PASSWORD') ?: 'Tabiasami3@'),
                 'pathaoSandbox' => false,
             ];
+
+            $raw = AppAuthController::getAppSetting('courier_settings_json');
+            if ($raw) {
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded)) {
+                    foreach ($defaults as $k => $v) {
+                        if (empty($decoded[$k])) {
+                            $decoded[$k] = $v;
+                        }
+                    }
+                    return response()->json([
+                        'success' => true,
+                        'settings' => $decoded,
+                        'data' => $decoded,
+                    ]);
+                }
+            }
 
             return response()->json([
                 'success' => true,

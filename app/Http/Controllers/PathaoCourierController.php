@@ -14,24 +14,34 @@ class PathaoCourierController extends Controller
 {
     private function getStoredCourierConfig(): array
     {
+        $defaults = [
+            'defaultCourier' => 'Pathao',
+            'pathaoStoreId' => (string) (env('PATHAO_STORE_ID') ?: '435821'),
+            'pathaoClientId' => (string) (env('PATHAO_CLIENT_ID') ?: 'pmbk5kJezJ'),
+            'pathaoClientSecret' => (string) (env('PATHAO_CLIENT_SECRET') ?: 'g5lWzr9D0VChoGyT4guCv5NFFNlotXt8Qg4jUXFo'),
+            'pathaoUsername' => (string) (env('PATHAO_USERNAME') ?: 'budgetchoicebd@gmail.com'),
+            'pathaoPassword' => (string) (env('PATHAO_PASSWORD') ?: 'Tabiasami3@'),
+            'pathaoSandbox' => false,
+        ];
+
         $raw = AppAuthController::getAppSetting('courier_settings_json');
         if ($raw) {
             $decoded = json_decode($raw, true);
             if (is_array($decoded)) {
-                return $decoded;
+                return array_merge($defaults, array_filter($decoded));
             }
         }
-        return [];
+        return $defaults;
     }
 
     private function getAccessToken(array $credentials = []): array
     {
         $stored = $this->getStoredCourierConfig();
 
-        $clientId = trim((string) ($credentials['clientId'] ?? $stored['pathaoClientId'] ?? AppAuthController::getAppSetting('pathao_client_id') ?? env('PATHAO_CLIENT_ID', 'pmbk5kJezJ')));
-        $clientSecret = trim((string) ($credentials['clientSecret'] ?? $stored['pathaoClientSecret'] ?? AppAuthController::getAppSetting('pathao_client_secret') ?? env('PATHAO_CLIENT_SECRET', 'g5lWzr9D0VChoGyT4guCv5NFFNlotXt8Qg4jUXFo')));
-        $username = trim((string) ($credentials['username'] ?? $stored['pathaoUsername'] ?? AppAuthController::getAppSetting('pathao_username') ?? env('PATHAO_USERNAME', 'budgetchoicebd@gmail.com')));
-        $password = trim((string) ($credentials['password'] ?? $stored['pathaoPassword'] ?? AppAuthController::getAppSetting('pathao_password') ?? env('PATHAO_PASSWORD', '')));
+        $clientId = trim((string) ($credentials['clientId'] ?? $stored['pathaoClientId'] ?? AppAuthController::getAppSetting('pathao_client_id') ?? config('pathao-courier.pathao_client_id') ?? env('PATHAO_CLIENT_ID', 'pmbk5kJezJ')));
+        $clientSecret = trim((string) ($credentials['clientSecret'] ?? $stored['pathaoClientSecret'] ?? AppAuthController::getAppSetting('pathao_client_secret') ?? config('pathao-courier.pathao_client_secret') ?? env('PATHAO_CLIENT_SECRET', 'g5lWzr9D0VChoGyT4guCv5NFFNlotXt8Qg4jUXFo')));
+        $username = trim((string) ($credentials['username'] ?? $stored['pathaoUsername'] ?? AppAuthController::getAppSetting('pathao_username') ?? config('pathao-courier.pathao_username') ?? env('PATHAO_USERNAME', 'budgetchoicebd@gmail.com')));
+        $password = trim((string) ($credentials['password'] ?? $stored['pathaoPassword'] ?? AppAuthController::getAppSetting('pathao_password') ?? config('pathao-courier.pathao_password') ?? env('PATHAO_PASSWORD', 'Tabiasami3@')));
         $isSandbox = (bool) ($credentials['isSandbox'] ?? $stored['pathaoSandbox'] ?? (AppAuthController::getAppSetting('pathao_sandbox', '0') === '1'));
 
         $baseUrl = $isSandbox ? 'https://courier-api-sandbox.pathao.com' : rtrim((string) env('PATHAO_BASE_URL', 'https://api-hermes.pathao.com'), '/');
@@ -191,7 +201,7 @@ class PathaoCourierController extends Controller
             $stored = $this->getStoredCourierConfig();
 
             $auth = $this->getAccessToken($creds);
-            $storeId = (int) ($creds['storeId'] ?? $stored['pathaoStoreId'] ?? AppAuthController::getAppSetting('pathao_store_id') ?? env('PATHAO_STORE_ID', 435821));
+            $storeId = (int) ($creds['storeId'] ?? $stored['pathaoStoreId'] ?? AppAuthController::getAppSetting('pathao_store_id') ?? config('pathao-courier.pathao_store_id') ?? env('PATHAO_STORE_ID', 435821));
 
             $cleanPhone = $this->cleanBdPhone((string) ($order['recipientPhone'] ?? ''));
             if (!preg_match('/^01[3-9]\d{8}$/', $cleanPhone)) {
