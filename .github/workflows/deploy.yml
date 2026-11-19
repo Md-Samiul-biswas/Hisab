@@ -36,7 +36,7 @@ jobs:
           password: ${{ secrets.CPANEL_FTP_PASSWORD }}
           protocol: sftp
           port: 22
-          server-dir: public_html/
+          server-dir: hisab.budgetchoicebd.com/
           exclude: |
             **/.git*
             **/.git*/**
