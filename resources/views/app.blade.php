@@ -33,16 +33,32 @@
     @php
       $cssFiles = glob(public_path('assets/index-*.css')) ?: [];
       $jsFiles = glob(public_path('assets/index-*.js')) ?: [];
+
+      // Clean up stale older bundles if present on server
+      foreach ($jsFiles as $f) {
+        if (basename($f) !== 'index-Drto1qk2.js' && file_exists($f)) {
+          @unlink($f);
+        }
+      }
+      foreach ($cssFiles as $f) {
+        if (basename($f) !== 'index-BP-z-Fws.css' && file_exists($f)) {
+          @unlink($f);
+        }
+      }
+      $activeCss = file_exists(public_path('assets/index-BP-z-Fws.css')) ? 'index-BP-z-Fws.css' : (basename($cssFiles[0] ?? ''));
+      $activeJs = file_exists(public_path('assets/index-Drto1qk2.js')) ? 'index-Drto1qk2.js' : (basename($jsFiles[0] ?? ''));
+      $cssVer = $activeCss && file_exists(public_path('assets/' . $activeCss)) ? filemtime(public_path('assets/' . $activeCss)) : time();
+      $jsVer = $activeJs && file_exists(public_path('assets/' . $activeJs)) ? filemtime(public_path('assets/' . $activeJs)) : time();
     @endphp
-    @foreach ($cssFiles as $cssFile)
-      <link rel="stylesheet" href="{{ asset('assets/' . basename($cssFile)) }}" />
-    @endforeach
+    @if ($activeCss)
+      <link rel="stylesheet" href="{{ asset('assets/' . $activeCss) }}?v={{ $cssVer }}" />
+    @endif
   </head>
   <body class="bg-neutral-50 text-neutral-900 antialiased">
     <div id="root"></div>
-    @foreach ($jsFiles as $jsFile)
-      <script type="module" src="{{ asset('assets/' . basename($jsFile)) }}"></script>
-    @endforeach
+    @if ($activeJs)
+      <script type="module" src="{{ asset('assets/' . $activeJs) }}?v={{ $jsVer }}"></script>
+    @endif
 
     <!-- Live Multi-Courier Fraud Network Checker Integration -->
     <script>
