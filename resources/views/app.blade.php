@@ -8,6 +8,28 @@
     <link rel="icon" type="image/svg+xml" href="{{ asset('icon.svg') }}" />
     <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}" />
     <link rel="manifest" href="{{ asset('manifest.webmanifest') }}" />
+    <script>
+      (function() {
+        var originalFetch = window.fetch;
+        window.fetch = function(input, init) {
+          init = init || {};
+          init.headers = init.headers || {};
+          try {
+            var token = localStorage.getItem('biz_cpanel_auth_token');
+            if (token) {
+              if (typeof Headers !== 'undefined' && init.headers instanceof Headers) {
+                if (!init.headers.has('X-Auth-Token')) init.headers.set('X-Auth-Token', token);
+                if (!init.headers.has('Authorization')) init.headers.set('Authorization', 'Bearer ' + token);
+              } else {
+                if (!init.headers['X-Auth-Token']) init.headers['X-Auth-Token'] = token;
+                if (!init.headers['Authorization']) init.headers['Authorization'] = 'Bearer ' + token;
+              }
+            }
+          } catch (e) {}
+          return originalFetch.call(this, input, init);
+        };
+      })();
+    </script>
     @php
       $cssFiles = glob(public_path('assets/index-*.css')) ?: [];
       $jsFiles = glob(public_path('assets/index-*.js')) ?: [];

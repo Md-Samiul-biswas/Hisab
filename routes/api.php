@@ -19,21 +19,26 @@ Route::post('/auth/change-password', [AppAuthController::class, 'changePassword'
 Route::match(['get', 'post'], '/sync.php', [SyncController::class, 'handle']);
 Route::match(['get', 'post'], '/sync/{action?}', [SyncController::class, 'handle']);
 
-// Courier Settings & Integration APIs
-Route::get('/courier/settings', [CourierSettingsController::class, 'show']);
-Route::post('/courier/settings', [CourierSettingsController::class, 'store']);
+// Public Courier Webhooks (incoming from courier servers)
+Route::post('/courier/pathao/webhook', [PathaoCourierController::class, 'webhook']);
 
-Route::prefix('/courier/pathao')->group(function () {
-    Route::post('/test-connection', [PathaoCourierController::class, 'testConnection']);
-    Route::post('/cities', [PathaoCourierController::class, 'cities']);
-    Route::post('/zones', [PathaoCourierController::class, 'zones']);
-    Route::post('/create-order', [PathaoCourierController::class, 'createOrder']);
-    Route::post('/webhook', [PathaoCourierController::class, 'webhook']);
+// Protected APIs (Require Authentication)
+Route::middleware(['app.auth'])->group(function () {
+    // Courier Settings & Integration APIs
+    Route::get('/courier/settings', [CourierSettingsController::class, 'show']);
+    Route::post('/courier/settings', [CourierSettingsController::class, 'store']);
+
+    Route::prefix('/courier/pathao')->group(function () {
+        Route::post('/test-connection', [PathaoCourierController::class, 'testConnection']);
+        Route::post('/cities', [PathaoCourierController::class, 'cities']);
+        Route::post('/zones', [PathaoCourierController::class, 'zones']);
+        Route::post('/create-order', [PathaoCourierController::class, 'createOrder']);
+    });
+
+    Route::post('/courier/steadfast/create-order', [SteadfastCourierController::class, 'createOrder']);
+
+    // AI Order, Receipt & Business Advisor Endpoints
+    Route::post('/ai-extract-order', [AiOrderController::class, 'extractOrder']);
+    Route::post('/ai-extract-expenses', [AiOrderController::class, 'extractExpenses']);
+    Route::post('/chat', [AiOrderController::class, 'chat']);
 });
-
-Route::post('/courier/steadfast/create-order', [SteadfastCourierController::class, 'createOrder']);
-
-// AI Order, Receipt & Business Advisor Endpoints
-Route::post('/ai-extract-order', [AiOrderController::class, 'extractOrder']);
-Route::post('/ai-extract-expenses', [AiOrderController::class, 'extractExpenses']);
-Route::post('/chat', [AiOrderController::class, 'chat']);

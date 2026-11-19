@@ -8,8 +8,17 @@ use Throwable;
 
 class CourierSettingsController extends Controller
 {
-    public function show(): JsonResponse
+    public function show(Request $request): JsonResponse
     {
+        $user = AppAuthController::getAuthenticatedUser($request);
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'code' => 'UNAUTHORIZED',
+                'error' => 'কুরিয়ার সেটিংস দেখার জন্য লগইন করা আবশ্যক।',
+            ], 401);
+        }
+
         try {
             AppAuthController::ensureCoreTables();
             $raw = AppAuthController::getAppSetting('courier_settings_json');
@@ -37,12 +46,30 @@ class CourierSettingsController extends Controller
                 'data' => $defaults,
             ]);
         } catch (Throwable) {
-            return response()->json(['success' => true, 'settings' => null, 'data' => null]);
+            return response()->json(['success' => false, 'error' => 'কুরিয়ার সেটিংস লোড করা যায়নি।'], 500);
         }
     }
 
     public function store(Request $request): JsonResponse
     {
+        $user = AppAuthController::getAuthenticatedUser($request);
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'code' => 'UNAUTHORIZED',
+                'error' => 'অননুমোদিত এক্সেস। অনুগ্রহ করে লগইন করুন।',
+            ], 401);
+        }
+
+        // Only Owner can modify Courier API credentials
+        if (($user['role'] ?? '') !== 'owner') {
+            return response()->json([
+                'success' => false,
+                'code' => 'FORBIDDEN',
+                'error' => 'শুধুমাত্র ওনার (Owner) কুরিয়ার সেটিংস পরিবর্তন করতে পারবেন।',
+            ], 403);
+        }
+
         try {
             AppAuthController::ensureCoreTables();
             $payload = $request->input('settings') ?? $request->all();
@@ -56,7 +83,7 @@ class CourierSettingsController extends Controller
                 'message' => 'Courier API settings successfully saved on server.',
             ]);
         } catch (Throwable) {
-            return response()->json(['success' => true, 'localFallback' => true]);
+            return response()->json(['success' => false, 'error' => 'সেটিংস সংরক্ষণ ব্যর্থ হয়েছে।'], 500);
         }
     }
 }

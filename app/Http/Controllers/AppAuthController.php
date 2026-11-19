@@ -6,6 +6,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Throwable;
 
 class AppAuthController extends Controller
@@ -163,10 +164,11 @@ class AppAuthController extends Controller
                 ] : null,
             ]);
         } catch (Throwable $e) {
+            $errDetail = config('app.debug') ? ' (' . $e->getMessage() . ')' : '';
             return response()->json([
                 'success' => false,
                 'code' => 'DB_CONNECTION_ERROR',
-                'error' => 'MySQL ডাটাবেস সংযোগ হয়নি। অনুগ্রহ করে .env ফাইলে আপনার DB_DATABASE, DB_USERNAME এবং DB_PASSWORD সঠিকভাবে বসান। (' . $e->getMessage() . ')',
+                'error' => 'MySQL ডাটাবেস সংযোগ হয়নি। অনুগ্রহ করে .env ফাইলে তথ্য যাচাই করুন।' . $errDetail,
             ], 500);
         }
     }
@@ -219,6 +221,16 @@ class AppAuthController extends Controller
 
     public function login(Request $request): JsonResponse
     {
+        $throttleKey = 'login_attempt:' . $request->ip();
+        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            $seconds = RateLimiter::availableIn($throttleKey);
+            return response()->json([
+                'success' => false,
+                'code' => 'TOO_MANY_ATTEMPTS',
+                'error' => "খুব বেশি বার ভুল পাসওয়ার্ড দেওয়া হয়েছে। অনুগ্রহ করে {$seconds} সেকেন্ড পর আবার চেষ্টা করুন।",
+            ], 429);
+        }
+
         try {
             self::ensureCoreTables();
             $ownerEmail = (string) self::getAppSetting('admin_email', 'samiulbiswas016@gmail.com');
@@ -241,6 +253,7 @@ class AppAuthController extends Controller
 
             // Owner login verification (supports standard PHP password_verify or Laravel Hash::check)
             if ($email === strtolower(trim($ownerEmail)) && (password_verify($password, $passwordHash) || Hash::check($password, $passwordHash))) {
+                RateLimiter::clear($throttleKey);
                 $displayName = (string) self::getAppSetting('admin_display_name', 'Samiul Biswas');
                 $token = self::issueAuthToken($email, $displayName, 'owner');
 
@@ -275,6 +288,7 @@ class AppAuthController extends Controller
                         : password_verify($password, $passwordHash);
 
                     if ($validPass) {
+                        RateLimiter::clear($throttleKey);
                         $displayName = (string) ($member['name'] ?? $email);
                         $role = (string) ($member['role'] ?? 'staff');
                         $token = self::issueAuthToken($email, $displayName, $role);
@@ -293,9 +307,11 @@ class AppAuthController extends Controller
                 }
             }
 
+            RateLimiter::hit($throttleKey, 60);
             return response()->json(['success' => false, 'error' => 'ইমেইল বা পাসওয়ার্ড ভুল হয়েছে।'], 401);
         } catch (Throwable $e) {
-            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+            $errDetail = config('app.debug') ? ': ' . $e->getMessage() : '';
+            return response()->json(['success' => false, 'error' => 'সার্ভার প্রক্রিয়াকরণে সমস্যা হয়েছে' . $errDetail], 500);
         }
     }
 
